@@ -1,4 +1,5 @@
 
+// rconClient.ts
 import * as net from 'net';
 
 export class RconClient {
@@ -52,8 +53,19 @@ export class RconClient {
   }
 
   private handleData(data: Buffer): void {
-    // Handle received data
-    console.log(data.toString());
+    const length = data.readInt32LE(0);
+    const responseType = data.readInt32LE(8);
+
+    if (responseType === 2) {
+      // Auth response
+      const success = data.readInt32LE(12) === 1;
+      this.authenticated = success;
+      console.log(success ? 'Authenticated successfully.' : 'Authentication failed.');
+    } else if (responseType === 0) {
+      // Command response
+      const payload = data.slice(12, length - 2).toString();
+      console.log('Response:', payload);
+    }
   }
 
   public async sendCommand(command: string): Promise<void> {
@@ -61,8 +73,14 @@ export class RconClient {
       throw new Error('Not authenticated. Call connect() first.');
     }
 
-    return new Promise<void>((resolve) => {
-      this.socket?.once('data', () => {
+    return new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Command response timeout.'));
+      }, 5000);
+
+      this.socket?.once('data', (data) => {
+        clearTimeout(timeout);
+        this.handleData(data);
         resolve();
       });
 
